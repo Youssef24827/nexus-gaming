@@ -287,3 +287,39 @@ with check (
       and (select auth.uid()) in (c.participant_a, c.participant_b)
   )
 );
+
+-- Reserve community audio-call signaling for current community members.
+drop policy if exists "Nexus community members can receive audio call signals" on realtime.messages;
+create policy "Nexus community members can receive audio call signals"
+on realtime.messages for select to authenticated
+using (
+  realtime.messages.extension = 'broadcast'
+  and exists (
+    select 1 from public.community_members cm
+    where (select realtime.topic()) = 'nexus-community-call:' || cm.community_id::text
+      and cm.user_id = (select auth.uid())
+  )
+);
+
+drop policy if exists "Nexus community members can send audio call signals" on realtime.messages;
+create policy "Nexus community members can send audio call signals"
+on realtime.messages for insert to authenticated
+with check (
+  realtime.messages.extension = 'broadcast'
+  and exists (
+    select 1 from public.community_members cm
+    where (select realtime.topic()) = 'nexus-community-call:' || cm.community_id::text
+      and cm.user_id = (select auth.uid())
+  )
+);
+
+-- Allow every authenticated community member to send their own group messages.
+grant select, insert on public.community_group_messages to authenticated;
+drop policy if exists "Members can send group messages" on public.community_group_messages;
+drop policy if exists "Community members can send their own messages" on public.community_group_messages;
+create policy "Community members can send their own messages"
+on public.community_group_messages for insert to authenticated
+with check (
+  sender_id = (select auth.uid())
+  and public.is_nexus_community_member(community_id)
+);
